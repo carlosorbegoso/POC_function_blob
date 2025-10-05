@@ -12,6 +12,7 @@ import org.sky.azure.AzureTableStorageClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class BlobDecryptFunction {
 
@@ -74,7 +75,7 @@ public class BlobDecryptFunction {
 
   private void processDecryption(DecryptionConfig config, Path tempEncrypted,
                                  Path tempDecrypted, String name,
-                                 java.util.logging.Logger logger) throws Exception {
+                                 Logger logger) throws Exception {
     logger.info("Step 1: retrieve password from key vault");
     AzureKeyVaultClient keyVaultClient = new AzureKeyVaultClient(config.getKeyVaultUrl());
     String password = keyVaultClient.getEncryptionPassword(config.getSecretName());
@@ -97,7 +98,7 @@ public class BlobDecryptFunction {
 
   private void handleDecryptionError(Exception e, String name, long fileSize,
                                      AzureTableStorageClient tableClient,
-                                     java.util.logging.Logger logger) {
+                                     Logger logger) {
     logger.log(Level.SEVERE, "Failed to decrypt blob: " + name, e);
 
     if (tableClient != null) {
@@ -127,7 +128,7 @@ public class BlobDecryptFunction {
     return value;
   }
 
-  private void cleanupTempFiles(java.util.logging.Logger logger, Path... files) {
+  private void cleanupTempFiles(Logger logger, Path... files) {
     for (Path file : files) {
       try {
         if (file != null && Files.exists(file)) {
