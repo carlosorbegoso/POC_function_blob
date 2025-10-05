@@ -35,63 +35,81 @@ public class BlobDecryptFunction {
     AzureTableStorageClient tableClient = null;
 
     try {
-      String keyVaultUrl = getEnvironmentVariable("KEY_VAULT_URL");
-      String secretName = getEnvironmentVariable("ENCRYPTION_SECRET_NAME");
-      String destinationStorageUrl = getEnvironmentVariable("DESTINATION_STORAGE_URL");
-      String destinationContainer = getEnvironmentVariable("DESTINATION_CONTAINER");
-      String logsStorageUrl = getEnvironmentVariable("LOGS_STORAGE_URL");
-      String logsTableName = getEnvironmentVariable("LOGS_TABLE_NAME");
+      DecryptionConfig config = loadConfiguration();
+      tableClient = initializeTableClient(config, logger);
 
-      logger.info("Step 0: initializing table storage client for logs");
-      tableClient = new AzureTableStorageClient(logsStorageUrl, logsTableName);
-
-      logger.info("Step 1: retrieve password from key vault");
-      AzureKeyVaultClient keyVaultClient = new AzureKeyVaultClient(keyVaultUrl);
-      String password = keyVaultClient.getEncryptionPassword(secretName);
-      logger.info("password retrieved successfully");
-
-      logger.info("Step 2: creating temp files and saving encrypted blob");
       tempEncrypted = Files.createTempFile("encrypted-", ".tmp");
       tempDecrypted = Files.createTempFile("decrypted-", ".tmp");
-
       Files.write(tempEncrypted, encryptedBlob);
-      logger.info("save encrypted blob to temp file successfully");
 
-      logger.info("Step 3: decrypting temp file");
-      FileDecryptor.decryptFile(tempEncrypted, tempDecrypted, password, true, logger);
-      logger.info("decrypting temp file successfully");
-
-      logger.info("Step 4: uploading decrypted file to destination storage account");
-      AzureBlobStorageDecrypt destinationStorage = new AzureBlobStorageDecrypt(
-          destinationStorageUrl,
-          destinationContainer
-      );
-
-      String decryptedBlobName = removeEncExtension(name);
-      destinationStorage.uploadBlob(decryptedBlobName, tempDecrypted);
-      logger.info("uploading decrypted file to destination storage account successfully");
+      processDecryption(config, tempEncrypted, tempDecrypted, name, logger);
 
       long processingTime = System.currentTimeMillis() - startTime;
       tableClient.logSuccess(name, encryptedBlob.length, processingTime);
       logger.info("decryption process logged successfully in table storage");
 
     } catch (Exception e) {
-      logger.log(Level.SEVERE, "Failed to decrypt blob: " + name, e);
-
-      if (tableClient != null) {
-        try {
-          tableClient.logFailure(name, encryptedBlob.length, e.getMessage());
-          logger.info("failure logged in table storage");
-        } catch (Exception logEx) {
-          logger.warning("Failed to log error to table storage: " + logEx.getMessage());
-        }
-      }
-
-      throw new RuntimeException("Failed to decrypt blob: " + name, e);
-
+      handleDecryptionError(e, name, encryptedBlob.length, tableClient, logger);
     } finally {
       cleanupTempFiles(logger, tempEncrypted, tempDecrypted);
     }
+  }
+
+  private DecryptionConfig loadConfiguration() {
+    return new DecryptionConfig(
+        getEnvironmentVariable("KEY_VAULT_URL"),
+        getEnvironmentVariable("ENCRYPTION_SECRET_NAME"),
+        getEnvironmentVariable("DESTINATION_STORAGE_URL"),
+        getEnvironmentVariable("DESTINATION_CONTAINER"),
+        getEnvironmentVariable("LOGS_STORAGE_URL"),
+        getEnvironmentVariable("LOGS_TABLE_NAME")
+    );
+  }
+
+  private AzureTableStorageClient initializeTableClient(DecryptionConfig config,
+                                                        java.util.logging.Logger logger) {
+    logger.info("Step 0: initializing table storage client for logs");
+    return new AzureTableStorageClient(config.getLogsStorageUrl(), config.getLogsTableName());
+  }
+
+  private void processDecryption(DecryptionConfig config, Path tempEncrypted,
+                                 Path tempDecrypted, String name,
+                                 java.util.logging.Logger logger) throws Exception {
+    logger.info("Step 1: retrieve password from key vault");
+    AzureKeyVaultClient keyVaultClient = new AzureKeyVaultClient(config.getKeyVaultUrl());
+    String password = keyVaultClient.getEncryptionPassword(config.getSecretName());
+    logger.info("password retrieved successfully");
+
+    logger.info("Step 2: decrypting temp file");
+    FileDecryptor.decryptFile(tempEncrypted, tempDecrypted, password, true, logger);
+    logger.info("decrypting temp file successfully");
+
+    logger.info("Step 3: uploading decrypted file");
+    AzureBlobStorageDecrypt destinationStorage = new AzureBlobStorageDecrypt(
+        config.getDestinationStorageUrl(),
+        config.getDestinationContainer()
+    );
+
+    String decryptedBlobName = removeEncExtension(name);
+    destinationStorage.uploadBlob(decryptedBlobName, tempDecrypted, logger);
+    logger.info("uploading decrypted file successfully");
+  }
+
+  private void handleDecryptionError(Exception e, String name, long fileSize,
+                                     AzureTableStorageClient tableClient,
+                                     java.util.logging.Logger logger) {
+    logger.log(Level.SEVERE, "Failed to decrypt blob: " + name, e);
+
+    if (tableClient != null) {
+      try {
+        tableClient.logFailure(name, fileSize, e.getMessage());
+        logger.info("failure logged in table storage");
+      } catch (Exception logEx) {
+        logger.warning("Failed to log error to table storage: " + logEx.getMessage());
+      }
+    }
+
+    throw new RuntimeException("Failed to decrypt blob: " + name, e);
   }
 
   private String removeEncExtension(String filename) {
