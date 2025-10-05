@@ -9,8 +9,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.logging.Logger;
 
 public class AzureBlobStorageDecrypt {
+
   private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
   private final BlobServiceClient blobServiceClient;
@@ -20,46 +22,58 @@ public class AzureBlobStorageDecrypt {
     this.blobServiceClient = createBlobServiceClient(storageAccountUrl);
     this.containerName = containerName;
   }
-  private BlobServiceClient createBlobServiceClient(String storageAccountUrl){
+
+  private BlobServiceClient createBlobServiceClient(String storageAccountUrl) {
     return new BlobServiceClientBuilder()
         .endpoint(storageAccountUrl)
         .credential(AzureCredentialsProvider.getCredentials())
         .buildClient();
   }
 
-  public void uploadBlob(String blobName, Path sourcePath){
-    try{
+  public void uploadBlob(String blobName, Path sourcePath) {
+    uploadBlob(blobName, sourcePath, null);
+  }
+
+  public void uploadBlob(String blobName, Path sourcePath, Logger logger) {
+    try {
       String blobNameWithTimestamp = addTimestampToBlobName(blobName);
       BlobClient blobClient = getBlobClient(blobNameWithTimestamp);
 
       long fileSize = Files.size(sourcePath);
-      System.out.printf("Uploading decrypted blob: %s (%.2f MB)%n",
+      String uploadMessage = String.format("Uploading decrypted blob: %s (%.2f MB)",
           blobNameWithTimestamp, fileSize / (1024.0 * 1024.0));
 
+      if (logger != null) {
+        logger.info(uploadMessage);
+      } else {
+        System.out.println(uploadMessage);
+      }
+
       blobClient.uploadFromFile(sourcePath.toString(), true);
-      System.out.printf("Uploaded successfully: %s%n", blobNameWithTimestamp);
-    }catch (Exception e){
+
+      String successMessage = String.format("Uploaded successfully: %s", blobNameWithTimestamp);
+      if (logger != null) {
+        logger.info(successMessage);
+      } else {
+        System.out.println(successMessage);
+      }
+
+    } catch (Exception e) {
       throw new RuntimeException("Failed to upload decrypted blob: " + blobName, e);
     }
   }
 
   private BlobClient getBlobClient(String blobName) {
-    BlobContainerClient containerClient = getContainerClient(containerName);
-    return  containerClient.getBlobClient(blobName);
+    BlobContainerClient containerClient = getContainerClient();
+    return containerClient.getBlobClient(blobName);
   }
 
-  private BlobContainerClient getContainerClient(String containerName){
+  private BlobContainerClient getContainerClient() {
     return blobServiceClient.getBlobContainerClient(containerName);
   }
 
   private String addTimestampToBlobName(String blobName) {
     String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
-    int lastDotIndex = blobName.lastIndexOf('.');
-    if (lastDotIndex > 0) {
-      String nameWithoutExtension = blobName.substring(0, lastDotIndex);
-      String extension = blobName.substring(lastDotIndex);
-      return nameWithoutExtension + "-" + timestamp + extension;
-    }
-    return blobName + "-" + timestamp;
+    return timestamp + "-" + blobName;
   }
 }
