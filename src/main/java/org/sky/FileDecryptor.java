@@ -18,6 +18,7 @@ import java.util.logging.Logger;
 
 public class FileDecryptor {
 
+  private static final Logger logger = Logger.getLogger(FileDecryptor.class.getName());
   private static final String OPENSSL_SALT_PREFIX = "Salted__";
   private static final int SALT_PREFIX_LENGTH = 8;
   private static final int SALT_LENGTH = 8;
@@ -33,15 +34,15 @@ public class FileDecryptor {
   private static final String HASH_ALGORITHM_SHA256 = "SHA-256";
 
   public static void decryptFile(Path inputPath, Path outputPath, String password,
-                                 boolean isBase64Encoded, Logger logger) throws Exception {
+                                 boolean isBase64Encoded) throws Exception {
 
-    printProcessingInfo(inputPath, logger);
+    printProcessingInfo(inputPath);
 
     try (InputStream inputStream = createInputStream(inputPath, isBase64Encoded)) {
-      decryptStream(inputStream, outputPath, password, logger);
+      decryptStream(inputStream, outputPath, password);
     }
 
-    printSuccessInfo(outputPath, logger);
+    printSuccessInfo(outputPath);
   }
 
   private static InputStream createInputStream(Path inputPath, boolean isBase64Encoded) throws IOException {
@@ -49,39 +50,31 @@ public class FileDecryptor {
     return isBase64Encoded ? Base64.getDecoder().wrap(fileStream) : fileStream;
   }
 
-  private static void printProcessingInfo(Path inputPath, Logger logger) throws IOException {
+  private static void printProcessingInfo(Path inputPath) throws IOException {
     long fileSize = Files.size(inputPath);
     String message = String.format("Processing file: %s (%.2f MB)",
         inputPath.getFileName(), fileSize / BYTES_TO_MB);
 
-    if (logger != null) {
-      logger.info(message);
-    } else {
-      System.out.println(message);
-    }
+   logger.info(message);
   }
 
-  private static void printSuccessInfo(Path outputPath, Logger logger) throws IOException {
+  private static void printSuccessInfo(Path outputPath) throws IOException {
     long outputSize = Files.size(outputPath);
     String message = String.format("Decrypted successfully: %s (%.2f MB)",
         outputPath.getFileName(), outputSize / BYTES_TO_MB);
 
-    if (logger != null) {
-      logger.info(message);
-    } else {
-      System.out.println(message);
-    }
+    logger.info(message);
   }
 
   private static void decryptStream(InputStream inputStream, Path outputPath,
-                                    String password, Logger logger) throws Exception {
+                                    String password) throws Exception {
 
     byte[] header = readExactBytes(inputStream, SALT_PREFIX_LENGTH);
 
     if (isOpenSSLFormat(header)) {
-      decryptOpenSSLStream(inputStream, outputPath, password, header, logger);
+      decryptOpenSSLStream(inputStream, outputPath, password, header);
     } else {
-      decryptSimpleStream(inputStream, outputPath, password, header, logger);
+      decryptSimpleStream(inputStream, outputPath, password, header);
     }
   }
 
@@ -91,33 +84,33 @@ public class FileDecryptor {
   }
 
   private static void decryptOpenSSLStream(InputStream inputStream, Path outputPath,
-                                           String password, byte[] header, Logger logger) throws Exception {
+                                           String password, byte[] header) throws Exception {
 
     byte[] salt = readExactBytes(inputStream, SALT_LENGTH);
     KeyAndIV keyAndIV = deriveKeyAndIVFromPassword(password, salt);
 
-    performStreamDecryption(inputStream, outputPath, keyAndIV.getKey(), keyAndIV.getIv(), logger);
+    performStreamDecryption(inputStream, outputPath, keyAndIV.getKey(), keyAndIV.getIv());
   }
 
   private static void decryptSimpleStream(InputStream inputStream, Path outputPath,
-                                          String password, byte[] header, Logger logger) throws Exception {
+                                          String password, byte[] header) throws Exception {
 
     byte[] remainingIV = readExactBytes(inputStream, IV_LENGTH - SALT_PREFIX_LENGTH);
     byte[] iv = concatenateBytes(header, remainingIV);
     byte[] key = generateKeyFromPassword(password);
 
-    performStreamDecryption(inputStream, outputPath, key, iv, logger);
+    performStreamDecryption(inputStream, outputPath, key, iv);
   }
 
   private static void performStreamDecryption(InputStream inputStream, Path outputPath,
-                                              byte[] key, byte[] iv, Logger logger) throws Exception {
+                                              byte[] key, byte[] iv) throws Exception {
 
     Cipher cipher = createDecryptionCipher(key, iv);
 
     try (CipherInputStream cis = new CipherInputStream(inputStream, cipher);
          OutputStream outputStream = Files.newOutputStream(outputPath)) {
 
-      processStreamWithProgress(cis, outputStream, logger);
+      processStreamWithProgress(cis, outputStream);
     }
   }
 
@@ -132,8 +125,7 @@ public class FileDecryptor {
   }
 
   private static void processStreamWithProgress(InputStream inputStream,
-                                                OutputStream outputStream,
-                                                Logger logger) throws IOException {
+                                                OutputStream outputStream) throws IOException {
 
     byte[] buffer = new byte[BUFFER_SIZE];
     int bytesRead;
@@ -144,7 +136,8 @@ public class FileDecryptor {
       totalBytes += bytesRead;
 
       if (shouldPrintProgress(totalBytes)) {
-        printProgress(totalBytes, logger);
+        String message = String.format("Processed: %.2f MB", totalBytes / BYTES_TO_MB);
+        logger.info(message);
       }
     }
   }
@@ -153,15 +146,7 @@ public class FileDecryptor {
     return totalBytes % PROGRESS_UPDATE_INTERVAL == 0;
   }
 
-  private static void printProgress(long totalBytes, Logger logger) {
-    String message = String.format("Processed: %.2f MB", totalBytes / BYTES_TO_MB);
 
-    if (logger != null) {
-      logger.info(message);
-    } else {
-      System.out.println(message);
-    }
-  }
 
   private static byte[] readExactBytes(InputStream inputStream, int numberOfBytes) throws IOException {
     byte[] result = new byte[numberOfBytes];

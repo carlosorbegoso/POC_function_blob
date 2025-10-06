@@ -11,13 +11,17 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>11</java.version>
-        <azure.functions.version>3.0.0</azure.functions.version>
-        <azure.keyvault.version>4.6.0</azure.keyvault.version>
-        <azure.storage.blob.version>12.23.0</azure.storage.blob.version>
+        <azure.functions.maven.plugin.version>1.18.0</azure.functions.maven.plugin.version>
+        <azure.functions.java.library.version>3.0.0</azure.functions.java.library.version>
+        <azure.keyvault.version>4.5.0</azure.keyvault.version>
+        <azure.storage.blob.version>12.19.0</azure.storage.blob.version>
         <azure.data.tables.version>12.3.0</azure.data.tables.version>
-        <azure.identity.version>1.10.0</azure.identity.version>
+        <azure.identity.version>1.7.0</azure.identity.version>
         <maven.compiler.version>3.11.0</maven.compiler.version>
-
+        <bouncycastle.version>1.78.1</bouncycastle.version>
+        <functionAppName>blob-decrypt-function</functionAppName>
+        <functionAppRegion>eastus</functionAppRegion>
+        <functionResourceGroup>rg-decrypt-functions</functionResourceGroup>
     </properties>
 
     <dependencies>
@@ -25,7 +29,28 @@
         <dependency>
             <groupId>com.microsoft.azure.functions</groupId>
             <artifactId>azure-functions-java-library</artifactId>
-            <version>${azure.functions.version}</version>
+            <version>${azure.functions.java.library.version}</version>
+        </dependency>
+
+        <!-- BouncyCastle PGP -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpg-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+
+        <!-- BouncyCastle Provider (requerido por bcpg) -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+
+        <!-- Azure Identity (para autenticación) -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-identity</artifactId>
+            <version>${azure.identity.version}</version>
         </dependency>
 
         <!-- Azure Key Vault -->
@@ -42,21 +67,17 @@
             <version>${azure.storage.blob.version}</version>
         </dependency>
 
-        <!-- Azure Identity (para autenticación) -->
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-identity</artifactId>
-            <version>${azure.identity.version}</version>
-        </dependency>
-
+        <!-- Azure Table Storage -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-data-tables</artifactId>
             <version>${azure.data.tables.version}</version>
         </dependency>
     </dependencies>
+
     <build>
         <plugins>
+            <!-- Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -66,7 +87,40 @@
                     <target>${java.version}</target>
                 </configuration>
             </plugin>
+
+            <!-- Azure Functions Maven Plugin -->
+            <plugin>
+                <groupId>com.microsoft.azure</groupId>
+                <artifactId>azure-functions-maven-plugin</artifactId>
+                <version>${azure.functions.maven.plugin.version}</version>
+                <configuration>
+                    <appName>${functionAppName}</appName>
+                    <resourceGroup>${functionResourceGroup}</resourceGroup>
+                    <region>${functionAppRegion}</region>
+                    <runtime>
+                        <os>linux</os>
+                        <javaVersion>11</javaVersion>
+                    </runtime>
+                    <appSettings>
+                        <property>
+                            <name>FUNCTIONS_EXTENSION_VERSION</name>
+                            <value>~4</value>
+                        </property>
+                        <property>
+                            <name>FUNCTIONS_WORKER_RUNTIME</name>
+                            <value>java</value>
+                        </property>
+                    </appSettings>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>package-functions</id>
+                        <goals>
+                            <goal>package</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
-
 </project>

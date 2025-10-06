@@ -17,6 +17,7 @@ public class AzureBlobStorageDecrypt {
 
   private final BlobServiceClient blobServiceClient;
   private final String containerName;
+  private final Logger logger = Logger.getLogger(AzureBlobStorageDecrypt.class.getName());
 
   public AzureBlobStorageDecrypt(String storageAccountUrl, String containerName) {
     this.blobServiceClient = createBlobServiceClient(storageAccountUrl);
@@ -31,10 +32,6 @@ public class AzureBlobStorageDecrypt {
   }
 
   public void uploadBlob(String blobName, Path sourcePath) {
-    uploadBlob(blobName, sourcePath, null);
-  }
-
-  public void uploadBlob(String blobName, Path sourcePath, Logger logger) {
     try {
       String blobNameWithTimestamp = addTimestampToBlobName(blobName);
       BlobClient blobClient = getBlobClient(blobNameWithTimestamp);
@@ -43,20 +40,13 @@ public class AzureBlobStorageDecrypt {
       String uploadMessage = String.format("Uploading decrypted blob: %s (%.2f MB)",
           blobNameWithTimestamp, fileSize / (1024.0 * 1024.0));
 
-      if (logger != null) {
-        logger.info(uploadMessage);
-      } else {
-        System.out.println(uploadMessage);
-      }
+      logger.info(uploadMessage);
 
       blobClient.uploadFromFile(sourcePath.toString(), true);
 
       String successMessage = String.format("Uploaded successfully: %s", blobNameWithTimestamp);
-      if (logger != null) {
-        logger.info(successMessage);
-      } else {
-        System.out.println(successMessage);
-      }
+
+      logger.info(successMessage);
 
     } catch (Exception e) {
       throw new RuntimeException("Failed to upload decrypted blob: " + blobName, e);
