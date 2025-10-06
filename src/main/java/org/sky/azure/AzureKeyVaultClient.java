@@ -3,6 +3,7 @@ package org.sky.azure;
 import com.azure.security.keyvault.secrets.SecretClient;
 import com.azure.security.keyvault.secrets.SecretClientBuilder;
 import com.azure.security.keyvault.secrets.models.KeyVaultSecret;
+import org.sky.function.exception.KeyVaultException;
 
 
 public class AzureKeyVaultClient {
@@ -22,7 +23,7 @@ public class AzureKeyVaultClient {
       KeyVaultSecret secret = secretClient.getSecret(secretName);
       return secret.getValue();
     }catch (Exception e){
-      throw new RuntimeException("Failed to retrieve secret: " + secretName, e);
+      throw new KeyVaultException("Failed to retrieve secret: " + secretName, e);
     }
   }
   public String getEncryptionPassword(String secretName){

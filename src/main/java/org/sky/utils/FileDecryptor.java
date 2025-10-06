@@ -1,4 +1,6 @@
-package org.sky;
+package org.sky.utils;
+
+import org.sky.model.KeyAndIV;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
@@ -17,6 +19,9 @@ import java.util.Base64;
 import java.util.logging.Logger;
 
 public class FileDecryptor {
+  private FileDecryptor() {
+    throw new IllegalStateException("Utility class");
+  }
 
   private static final Logger logger = Logger.getLogger(FileDecryptor.class.getName());
   private static final String OPENSSL_SALT_PREFIX = "Salted__";

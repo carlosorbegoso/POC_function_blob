@@ -4,10 +4,11 @@ import com.microsoft.azure.functions.ExecutionContext;
 import com.microsoft.azure.functions.annotation.BlobTrigger;
 import com.microsoft.azure.functions.annotation.FunctionName;
 import com.microsoft.azure.functions.annotation.StorageAccount;
-import org.sky.FileDecryptor;
-import org.sky.azure.AzureBlobStorageDecrypt;
 import org.sky.azure.AzureKeyVaultClient;
+import org.sky.utils.PGPFileDecryptor;
+import org.sky.azure.AzureBlobStorageDecrypt;
 import org.sky.azure.AzureTableStorageClient;
+import org.sky.function.exception.DecryptionException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,8 +30,7 @@ public class BlobDecryptFunction {
       ExecutionContext context
   ) {
     this.logger =  context.getLogger();
-    logger.info(
-        String.format("Java Blob trigger function processed a blob. Name: %s, Size: %d Bytes",
+    logger.info(() -> String.format("Java Blob trigger function processed a blob. Name: %s, Size: %d Bytes",
         name, encryptedBlob.length));
 
     Path tempEncrypted = null;
@@ -62,11 +62,12 @@ public class BlobDecryptFunction {
   private DecryptionConfig loadConfiguration() {
     return new DecryptionConfig(
         getEnvironmentVariable("KEY_VAULT_URL"),
-        getEnvironmentVariable("ENCRYPTION_SECRET_NAME"),
         getEnvironmentVariable("DESTINATION_STORAGE_URL"),
         getEnvironmentVariable("DESTINATION_CONTAINER"),
         getEnvironmentVariable("LOGS_STORAGE_URL"),
-        getEnvironmentVariable("LOGS_TABLE_NAME")
+        getEnvironmentVariable("LOGS_TABLE_NAME"),
+        getEnvironmentVariable("PGP_PRIVATE_KEY_PATH"),
+        getEnvironmentVariable("PGP_PASSPHRASE_SECRET_NAME")
     );
   }
 
@@ -77,13 +78,16 @@ public class BlobDecryptFunction {
 
   private void processDecryption(DecryptionConfig config, Path tempEncrypted,
                                  Path tempDecrypted, String name) throws Exception {
-    logger.info("Step 1: retrieve password from key vault");
+    logger.info("Step 1: retrieve PGP passphrase from Azure Key Vault");
     AzureKeyVaultClient keyVaultClient = new AzureKeyVaultClient(config.getKeyVaultUrl());
-    String password = keyVaultClient.getEncryptionPassword(config.getSecretName());
-    logger.info("password retrieved successfully");
+    String passphrase = keyVaultClient.getEncryptionPassword(config.getPassphraseSecretName());
+    logger.info("passphrase retrieved successfully from Key Vault");
 
-    logger.info("Step 2: decrypting temp file");
-    FileDecryptor.decryptFile(tempEncrypted, tempDecrypted, password, true);
+    Path privateKeyPath = Path.of(config.getPrivateKeyPath());
+    logger.info(() -> String.format("Using private key file: %s", privateKeyPath));
+
+    logger.info("Step 2: decrypting temp file with PGP");
+    PGPFileDecryptor.decryptFile(tempEncrypted, tempDecrypted, privateKeyPath, passphrase);
     logger.info("decrypting temp file successfully");
 
     logger.info("Step 3: uploading decrypted file");
@@ -99,8 +103,7 @@ public class BlobDecryptFunction {
 
   private void handleDecryptionError(Exception e, String name, long fileSize,
                                      AzureTableStorageClient tableClient) {
-    logger.log(Level.SEVERE, "Failed to decrypt blob: " + name, e);
-
+    logger.log(Level.SEVERE, "Decryption error for blob: " + name, e);
     if (tableClient != null) {
       try {
         tableClient.logFailure(name, fileSize, e.getMessage());
@@ -110,7 +113,7 @@ public class BlobDecryptFunction {
       }
     }
 
-    throw new RuntimeException("Failed to decrypt blob: " + name, e);
+    throw new DecryptionException("Failed to decrypt blob: " + name, e);
   }
 
   private String removeEncExtension(String filename) {

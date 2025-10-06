@@ -1,4 +1,4 @@
-package org.sky;
+package org.sky.utils;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openpgp.*;
@@ -6,6 +6,8 @@ import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator;
 import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyDecryptorBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcePublicKeyDataDecryptorFactoryBuilder;
+import org.sky.function.exception.DecryptionException;
+import org.sky.model.DecryptionKeys;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -14,6 +16,10 @@ import java.security.Security;
 import java.util.Iterator;
 
 public class PGPFileDecryptor {
+
+  private PGPFileDecryptor() {
+    throw new IllegalStateException("Utility class");
+  }
 
   private static final int BUFFER_SIZE = 8192;
 
@@ -24,39 +30,46 @@ public class PGPFileDecryptor {
   }
 
   public static void decryptFile(Path encryptedFile, Path outputFile,
-                                 Path privateKeyFile, String passphrase) throws Exception {
-
+                                 Path privateKeyFile, String passphrase) {
     try (InputStream keyIn = Files.newInputStream(privateKeyFile);
          InputStream encIn = Files.newInputStream(encryptedFile);
          OutputStream out = Files.newOutputStream(outputFile)) {
 
       decryptFile(encIn, out, keyIn, passphrase.toCharArray());
+    } catch (Exception e) {
+      throw new DecryptionException("Error decrypting PGP file", e);
     }
   }
 
   private static void decryptFile(InputStream encryptedStream, OutputStream outputStream,
-                                  InputStream privateKeyStream, char[] passphrase) throws Exception {
+                                  InputStream privateKeyStream, char[] passphrase) {
+    try {
+      encryptedStream = PGPUtil.getDecoderStream(encryptedStream);
+      PGPEncryptedDataList encDataList = getEncryptedDataList(encryptedStream);
+      PGPSecretKeyRingCollection secretKeyRings = loadSecretKeyRing(privateKeyStream);
 
-    encryptedStream = PGPUtil.getDecoderStream(encryptedStream);
-    PGPEncryptedDataList encDataList = getEncryptedDataList(encryptedStream);
-    PGPSecretKeyRingCollection secretKeyRings = loadSecretKeyRing(privateKeyStream);
+      DecryptionKeys keys = findDecryptionKeys(encDataList, secretKeyRings, passphrase);
+      InputStream decryptedStream = getDecryptedStream(keys);
+      Object message = getUncompressedMessage(decryptedStream);
 
-    DecryptionKeys keys = findDecryptionKeys(encDataList, secretKeyRings, passphrase);
-    InputStream decryptedStream = getDecryptedStream(keys);
-    Object message = getUncompressedMessage(decryptedStream);
-
-    processMessage(message, outputStream);
-    verifyIntegrity(keys.encryptedData);
+      processMessage(message, outputStream);
+      verifyIntegrity(keys.encryptedData);
+    } catch (Exception e) {
+      throw new DecryptionException("Error during PGP stream decryption", e);
+    }
   }
 
-  private static PGPEncryptedDataList getEncryptedDataList(InputStream encryptedStream) throws Exception {
-    PGPObjectFactory pgpFactory = new JcaPGPObjectFactory(encryptedStream);
-    Object obj = pgpFactory.nextObject();
-
-    if (obj instanceof PGPEncryptedDataList) {
-      return (PGPEncryptedDataList) obj;
+  private static PGPEncryptedDataList getEncryptedDataList(InputStream encryptedStream) {
+    try {
+      PGPObjectFactory pgpFactory = new JcaPGPObjectFactory(encryptedStream);
+      Object obj = pgpFactory.nextObject();
+      if (obj instanceof PGPEncryptedDataList) {
+        return (PGPEncryptedDataList) obj;
+      }
+      return (PGPEncryptedDataList) pgpFactory.nextObject();
+    } catch (Exception e) {
+      throw new DecryptionException("Error extracting encrypted data list", e);
     }
-    return (PGPEncryptedDataList) pgpFactory.nextObject();
   }
 
   private static DecryptionKeys findDecryptionKeys(PGPEncryptedDataList encDataList,
@@ -90,17 +103,19 @@ public class PGPFileDecryptor {
     );
   }
 
-  private static Object getUncompressedMessage(InputStream decryptedStream) throws Exception {
-    PGPObjectFactory plainFactory = new JcaPGPObjectFactory(decryptedStream);
-    Object message = plainFactory.nextObject();
-
-    if (message instanceof PGPCompressedData) {
-      PGPCompressedData compressedData = (PGPCompressedData) message;
-      plainFactory = new JcaPGPObjectFactory(compressedData.getDataStream());
-      message = plainFactory.nextObject();
+  private static Object getUncompressedMessage(InputStream decryptedStream) throws PGPException {
+    try {
+      PGPObjectFactory plainFactory = new JcaPGPObjectFactory(decryptedStream);
+      Object message = plainFactory.nextObject();
+      if (message instanceof PGPCompressedData) {
+        PGPCompressedData compressedData = (PGPCompressedData) message;
+        plainFactory = new JcaPGPObjectFactory(compressedData.getDataStream());
+        message = plainFactory.nextObject();
+      }
+      return message;
+    } catch (Exception e) {
+      throw new DecryptionException("Error extracting uncompressed message", e);
     }
-
-    return message;
   }
 
   private static void processMessage(Object message, OutputStream outputStream)
@@ -118,15 +133,19 @@ public class PGPFileDecryptor {
     }
   }
 
-  private static void verifyIntegrity(PGPPublicKeyEncryptedData encryptedData) throws PGPException {
+  private static void verifyIntegrity(PGPPublicKeyEncryptedData encryptedData) throws PGPException, IOException {
     if (encryptedData.isIntegrityProtected() && !encryptedData.verify()) {
       throw new PGPException("Message failed integrity check");
     }
   }
 
-  private static PGPSecretKeyRingCollection loadSecretKeyRing(InputStream keyIn) throws Exception {
-    keyIn = PGPUtil.getDecoderStream(keyIn);
-    return new PGPSecretKeyRingCollection(keyIn, new JcaKeyFingerprintCalculator());
+  private static PGPSecretKeyRingCollection loadSecretKeyRing(InputStream keyIn) throws PGPException {
+    try {
+      keyIn = PGPUtil.getDecoderStream(keyIn);
+      return new PGPSecretKeyRingCollection(keyIn, new JcaKeyFingerprintCalculator());
+    } catch (Exception e) {
+      throw new DecryptionException("Error loading secret key ring", e);
+    }
   }
 
   private static PGPPrivateKey extractPrivateKey(PGPSecretKey secretKey, char[] passphrase)
@@ -148,13 +167,5 @@ public class PGPFileDecryptor {
     }
   }
 
-  private static class DecryptionKeys {
-    final PGPPrivateKey privateKey;
-    final PGPPublicKeyEncryptedData encryptedData;
 
-    DecryptionKeys(PGPPrivateKey privateKey, PGPPublicKeyEncryptedData encryptedData) {
-      this.privateKey = privateKey;
-      this.encryptedData = encryptedData;
-    }
-  }
 }

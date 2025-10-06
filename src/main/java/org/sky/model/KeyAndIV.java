@@ -1,4 +1,4 @@
-package org.sky;
+package org.sky.model;
 
 public class KeyAndIV {
   private final byte[] key;
