@@ -73,6 +73,14 @@
             <artifactId>azure-data-tables</artifactId>
             <version>${azure.data.tables.version}</version>
         </dependency>
+
+        <!-- JUnit Jupiter (JUnit 5) for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.9.3</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
