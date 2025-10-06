@@ -1,109 +1,57 @@
 package org.sky.model;
 
 import com.azure.data.tables.models.TableEntity;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
 
 public class DecryptionLog {
-
-  private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-  private String partitionKey;
-  private String rowKey;
   private String blobName;
   private String status;
+  private Long fileSizeBytes;
+  private Long processingTimeMs;
   private String errorMessage;
-  private long fileSizeBytes;
-  private String timestamp;
-  private long processingTimeMs;
-
-  public DecryptionLog() {
-  }
+  private OffsetDateTime timestamp;
+  private String rowKey;
 
   public DecryptionLog(String blobName, String status) {
     this.blobName = blobName;
     this.status = status;
-    this.timestamp = LocalDateTime.now().format(FORMATTER);
-    this.partitionKey = LocalDateTime.now().toLocalDate().toString();
-    this.rowKey = System.currentTimeMillis() + "_" + blobName;
+    this.timestamp = OffsetDateTime.now();
+    this.rowKey = UUID.randomUUID().toString();
   }
 
-  public TableEntity toTableEntity() {
-    TableEntity entity = new TableEntity(partitionKey, rowKey);
-    entity.addProperty("BlobName", blobName);
-    entity.addProperty("Status", status);
-    entity.addProperty("Timestamp", timestamp);
-    entity.addProperty("FileSizeBytes", fileSizeBytes);
-    entity.addProperty("ProcessingTimeMs", processingTimeMs);
-
-    if (errorMessage != null) {
-      entity.addProperty("ErrorMessage", errorMessage);
-    }
-
-    return entity;
+  public void setFileSizeBytes(Long fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
   }
 
-  public String getPartitionKey() {
-    return partitionKey;
-  }
-
-  public void setPartitionKey(String partitionKey) {
-    this.partitionKey = partitionKey;
-  }
-
-  public String getRowKey() {
-    return rowKey;
-  }
-
-  public void setRowKey(String rowKey) {
-    this.rowKey = rowKey;
-  }
-
-  public String getBlobName() {
-    return blobName;
-  }
-
-  public void setBlobName(String blobName) {
-    this.blobName = blobName;
-  }
-
-  public String getStatus() {
-    return status;
-  }
-
-  public void setStatus(String status) {
-    this.status = status;
-  }
-
-  public String getErrorMessage() {
-    return errorMessage;
+  public void setProcessingTimeMs(Long processingTimeMs) {
+    this.processingTimeMs = processingTimeMs;
   }
 
   public void setErrorMessage(String errorMessage) {
     this.errorMessage = errorMessage;
   }
 
-  public long getFileSizeBytes() {
-    return fileSizeBytes;
-  }
+  public TableEntity toTableEntity() {
+    TableEntity entity = new TableEntity("DecryptionLog", rowKey);
 
-  public void setFileSizeBytes(long fileSizeBytes) {
-    this.fileSizeBytes = fileSizeBytes;
-  }
+    entity.addProperty("BlobName", blobName);
+    entity.addProperty("Status", status);
+    entity.addProperty("Timestamp", timestamp.toString());
 
-  public String getTimestamp() {
-    return timestamp;
-  }
+    if (fileSizeBytes != null) {
+      entity.addProperty("FileSizeBytes", fileSizeBytes);
+    }
 
-  public void setTimestamp(String timestamp) {
-    this.timestamp = timestamp;
-  }
+    if (processingTimeMs != null) {
+      entity.addProperty("ProcessingTimeMs", processingTimeMs);
+    }
 
-  public long getProcessingTimeMs() {
-    return processingTimeMs;
-  }
+    if (errorMessage != null) {
+      entity.addProperty("ErrorMessage", errorMessage);
+    }
 
-  public void setProcessingTimeMs(long processingTimeMs) {
-    this.processingTimeMs = processingTimeMs;
+    return entity;
   }
 }
