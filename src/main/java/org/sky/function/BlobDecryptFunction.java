@@ -83,7 +83,7 @@ public class BlobDecryptFunction {
     logger.info("password retrieved successfully");
 
     logger.info("Step 2: decrypting temp file");
-    FileDecryptor.decryptFile(tempEncrypted, tempDecrypted, password, true, logger);
+    FileDecryptor.decryptFile(tempEncrypted, tempDecrypted, password, true);
     logger.info("decrypting temp file successfully");
 
     logger.info("Step 3: uploading decrypted file");
